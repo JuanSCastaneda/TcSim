@@ -6,7 +6,4 @@ public class SimCenter extends SimulationTool {
         super(arguments);
     }
 
-    public SimCenter() {
-        super();
-    }
 }

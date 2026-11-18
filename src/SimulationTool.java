@@ -6,6 +6,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.logging.Logger;
 import java.util.regex.*;
+import java.util.stream.Stream;
+import TcSimExceptions.*;
 
 public class SimulationTool {
     protected static final Logger LOG = Logger.getLogger(SimulationTool.class.getName());
@@ -13,6 +15,7 @@ public class SimulationTool {
     protected HashMap<String, String> userInputs;
     protected HashMap<String, String> teamcenterInputs;
     protected Path sevenZipExe;
+    protected String projectName;
 
     protected String toolPath;
 
@@ -79,8 +82,8 @@ public class SimulationTool {
     /**
      * Launches tool path defined in the SimulationTool constructor along with a list of arguments
      * @param args Passed as a list of strings
-     * @throws IOException
-     * @throws InterruptedException
+     * @throws IOException Thrown if program fails to start properly
+     * @throws InterruptedException Thrown with user intervention
      */
     public void launchTool(List<String> args) throws IOException, InterruptedException {
         ArrayList<String> cmd = new ArrayList<>(List.of(toolPath));
@@ -109,7 +112,7 @@ public class SimulationTool {
     public List<Path> findFilesWith(String prefix, String suffix) throws IOException {
         Pattern pattern;
         if (suffix != null && prefix != null) {
-            pattern = Pattern.compile("^" + "^" + prefix + "(.*)" + suffix + "$" + "$");
+            pattern = Pattern.compile("^" + prefix + "(.*)" + suffix + "$");
         } else if (suffix == null && prefix == null) {
             pattern = Pattern.compile("(.*)");
         } else if (suffix == null) {
@@ -160,11 +163,16 @@ public class SimulationTool {
         return this.findFilesWith(null, suffix);
     }
 
-
+    /**
+     * Deletes files with a specified prefix and suffix. A directory to iterate through must be provided.
+     * @param prefix Specified prefix passed as a String
+     * @param suffix Specified suffix passed as a String
+     * @param directory Specified directory to iterate through, passed as a Path
+     */
     public void deleteFilesWith(String prefix, String suffix, Path directory) throws IOException {
         Pattern pattern;
         if (suffix != null && prefix != null) {
-            pattern = Pattern.compile("^" + "^" + prefix + "(.*)" + suffix + "$" + "$");
+            pattern = Pattern.compile("^" + prefix + "(.*)" + suffix + "$");
         } else if (suffix == null && prefix == null) {
             pattern = Pattern.compile("(.*)");
         } else if (suffix == null) {
@@ -179,13 +187,31 @@ public class SimulationTool {
 
             for (Path path : stream) {
                 Matcher matcher = pattern.matcher(path.getFileName().toString());
-
-                if (!matcher.matches()) continue;
+                File file  = new File(path.toUri());
+                if (!(file.isFile() && matcher.matches())) continue;
                 LOG.info("Deleting " + path);
                 Files.delete(path);
                 
             }
         }
+    }
+
+    /**
+     * Deletes files with a specified prefix. A directory to iterate through must be provided.
+     * @param prefix Specified prefix passed as a String
+     * @param directory Specified directory to iterate through, passed as a Path
+     */
+    public void deleteFilesWithPrefix(String prefix, Path directory) throws IOException {
+        this.deleteFilesWith(prefix, null, directory);
+    }
+
+    /**
+     * Deletes files with a specified prefix. A directory to iterate through must be provided.
+     * @param suffix Specified suffix passed as a String
+     * @param directory Specified directory to iterate through, passed as a Path
+     */
+    public void deleteFilesWithSuffix(String suffix, Path directory) throws IOException {
+        this.deleteFilesWith(null, suffix, directory);
     }
 
     /**
@@ -215,7 +241,7 @@ public class SimulationTool {
 
         Pattern pattern;
         if (suffix != null && prefix != null) {
-            pattern = Pattern.compile("^" + "^" + prefix + "(.*)" + suffix + "$" + "$");
+            pattern = Pattern.compile("^" + prefix + "(.*)" + suffix + "$");
         } else if (suffix == null && prefix == null) {
             pattern = Pattern.compile("(.*)");
         } else if (suffix == null) {
@@ -266,13 +292,44 @@ public class SimulationTool {
         return findFolderWith(null, suffix);
     }
 
+    /**
+     * Deletes folders with a specified keyword in a directory
+     * @param keyword Passed as a String
+     * @param directory Passed as a Path instance
+     * @throws IOException Thrown if
+     */
+    public void deleteFoldersWithKeyword(String keyword, Path directory) throws IOException {
+        Pattern pattern = Pattern.compile("^(.*)" + keyword + "(.*)$");
+
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
+            for (Path path : stream) {
+                Matcher matcher = pattern.matcher(path.getFileName().toString());
+                File file = new File(path.toUri());
+                if (!(file.isDirectory() && matcher.matches())) continue;
+                this.deleteDirectory(path);
+            }
+        }
+    }
 
 
+    private void deleteDirectory(Path directory) throws IOException {
+        if (!Files.exists(directory)) {
+            return;
+        }
+
+        try (Stream<Path> paths = Files.walk(directory)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(path);
+            }
+        }
+
+        LOG.info("Deleted directory: " + directory);
+    }
 
 
     /**
      * Opens the Windows File Explorer in the working directory
-     * @throws IOException
+     * @throws IOException Thrown if Windows explorer fails to launch
      */
     public void openExplorerInWD() throws IOException {
         new ProcessBuilder("explorer.exe", Path.of(this.getWorkingDirectory()).toAbsolutePath().toString()).start();
@@ -285,8 +342,8 @@ public class SimulationTool {
      * Extracts a 7z or zip to a specified directory. May throw an IOException.
      * @param archive_path specified path for a zip or 7z
      * @param output_directory specified output directory for extracted contents
-     * @throws InterruptedException thrown if the exit code from 7z.exe or tar is not 0
-     * @throws IOException
+     * @throws InterruptedException Thrown with user intervention
+     * @throws IOException Thrown if the exit code from 7z.exe or tar is not 0
      */
     public void extractArchive(Path archive_path, Path output_directory) throws InterruptedException, IOException {
         Process process;
@@ -302,14 +359,14 @@ public class SimulationTool {
         } else {
             LOG.info("Using tar");
             LOG.info("Extracting archive in " + output_directory + "...");
-            pb = new ProcessBuilder("tar", "-xf", archive_path.toAbsolutePath().toString(), "-C" + "\"" + output_directory.toAbsolutePath().toString() + "\"");
+            pb = new ProcessBuilder("tar", "-xf", archive_path.toAbsolutePath().toString(), "-C" + "\"" + output_directory.toAbsolutePath() + "\"");
 
         }
         process = pb.start();
         int exitCode = process.waitFor();
         if (exitCode != 0) {
-            throw new IOException("Failed to extract: " + archive_path.toAbsolutePath().toString() + " to " +
-                    output_directory.toAbsolutePath().toString());
+            throw new IOException("Failed to extract: " + archive_path.toAbsolutePath() + " to " +
+                    output_directory.toAbsolutePath());
         }
         LOG.info("Extract Complete!");
 
@@ -319,8 +376,8 @@ public class SimulationTool {
      * Extracts a 7z or zip to a specified directory. May throw an IOException.
      * @param object_paths List of file or folder paths to be packed in a 7z or zip
      * @param resulting_archive_path specified output archive for packed contents
-     * @throws InterruptedException thrown if the exit code from 7z.exe or tar is not 0
-     * @throws IOException
+     * @throws InterruptedException Thrown with user intervention
+     * @throws IOException Thrown if the exit code from 7z.exe or tar is not 0
      */
     public void packArchive(List<Path> object_paths, Path resulting_archive_path) throws InterruptedException, IOException {
         Process process;
@@ -345,8 +402,8 @@ public class SimulationTool {
         process = pb.start();
         int exitCode = process.waitFor();
         if (exitCode != 0) {
-            throw new IOException("Failed to pack: " + resulting_archive_path.toAbsolutePath().toString() + " to " +
-                    resulting_archive_path.toAbsolutePath().toString());
+            throw new IOException("Failed to pack: " + resulting_archive_path.toAbsolutePath() + " to " +
+                    resulting_archive_path.toAbsolutePath());
         }
         LOG.info("Packing Complete!");
     }
@@ -382,45 +439,47 @@ public class SimulationTool {
         return this.teamcenterInputs.get("inputDatasetName");
     }
 
+    protected String getProjectNameFromPath() throws NameParsingError {
+        Path path = Path.of(this.getFilePath());
+        String filename = path.getFileName().toString();
+        Pattern pattern = Pattern.compile("^(?<root>.+)\\.(.+)?");
+        Matcher matcher = pattern.matcher(filename);
+
+        if (matcher.matches()) {
+            String root = matcher.group("root");
+            LOG.info("Retrieved "  +root + " from parsing the file");
+            return root;
+        }
+
+        LOG.warning("Could not extract project name from file path.");
+        throw new NameParsingError("Could not extract project name from file path.");
+    }
+
+    protected String getNewProjectNameInput() {
+
+        LOG.info("Retrieving user input ProjectName...");
+        String name = this.userInputs.get("ProjectName");
+        if (name != null) {
+            LOG.info("Retrived " + name);
+            if (name.contains(" ")) {
+                LOG.info("Replacing whitespace by underscores...");
+                name = name.replace(" ", "_");
+            }
+            return name;
+        }
+
+        LOG.warning("Could not gather new project name from ProjectName user input. Defaulting to ID_RevID_ToolName.");
+        return String.format(this.getInputID()+"_"+this.getInputRevID()+"_"+getClass().getSimpleName());
+    }
+
+
     // SETTERS
     // ================================================================================================================
     public void setLogPath(String logPath) {
         this.logPath = logPath;
     }
 
-
-//    public String parseProjectName() {
-//        String projectName=helper.parseInputParameters(helper.toolInputArgs).getOrDefault("projectName",null);
-//        return projectName.isEmpty() ? helper.inputID+"_"+helper.inputRevID+"_"+getClass().getSimpleName() : projectName;
-//    }
-//
-//
-//
-//
-
-//
-//
-//        public void deleteFilesWithExtention(String endswith) throws IOException { deleteFilesWithExtention(endswith,null); }
-//        public void deleteFolderWithKeyword(String keyword,String directory) throws IOException {
-//            try (Stream<Path> paths=Files.list(Path.of(directory))) {
-//                for (Path folder: paths.filter(Files::isDirectory).filter(p -> p.getFileName().toString().contains(keyword)).toList()) {
-//                    try (Stream<Path> tree=Files.walk(folder)) {
-//                        for (Path p: tree.sorted(Comparator.reverseOrder()).toList()) Files.delete(p);
-//                    }
-//                }
-//            }
-//        }
-
-//
-//        public String parseNameFromPath(String inputPath) {
-//            String name=Path.of(inputPath).getFileName().toString(); int dot=name.lastIndexOf('.');
-//            projectName=dot>0 ? name.substring(0,dot) : name; return projectName;
-//        }
-
-//
-//        public void addToGeneratePyFile(String outputPath,String pythonSource) throws IOException {
-//            Files.writeString(Path.of(outputPath),pythonSource+System.lineSeparator()+System.lineSeparator(),java.nio.charset.StandardCharsets.UTF_8,StandardOpenOption.CREATE,StandardOpenOption.APPEND);
-//        }
-//    }
-
+    public void setProjectName(String projectName) {
+        this.projectName = projectName;
+    }
 }
