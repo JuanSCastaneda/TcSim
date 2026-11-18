@@ -9,7 +9,7 @@ import java.util.regex.*;
 import java.util.stream.Stream;
 import TcSimExceptions.*;
 
-public class SimulationTool {
+public abstract class SimulationTool {
     protected static final Logger LOG = Logger.getLogger(SimulationTool.class.getName());
     public String logPath = "..\\sim_process_launch_summary.log";
     protected HashMap<String, String> userInputs;
@@ -20,6 +20,11 @@ public class SimulationTool {
     protected String toolPath;
 
     // Constructor
+
+    /**
+     *
+     * @param arguments A linked list passed from main containing launch specific properties
+     */
     public SimulationTool(LinkedList<String> arguments) {
         HashMap<String, String> inputs = new LinkedHashMap<>();
         inputs.put("filePath", null);
@@ -169,7 +174,7 @@ public class SimulationTool {
      * @param suffix Specified suffix passed as a String
      * @param directory Specified directory to iterate through, passed as a Path
      */
-    public void deleteFilesWith(String prefix, String suffix, Path directory) throws IOException {
+    public static void deleteFilesWith(String prefix, String suffix, Path directory) throws IOException {
         Pattern pattern;
         if (suffix != null && prefix != null) {
             pattern = Pattern.compile("^" + prefix + "(.*)" + suffix + "$");
@@ -201,8 +206,8 @@ public class SimulationTool {
      * @param prefix Specified prefix passed as a String
      * @param directory Specified directory to iterate through, passed as a Path
      */
-    public void deleteFilesWithPrefix(String prefix, Path directory) throws IOException {
-        this.deleteFilesWith(prefix, null, directory);
+    public static void deleteFilesWithPrefix(String prefix, Path directory) throws IOException {
+        SimulationTool.deleteFilesWith(prefix, null, directory);
     }
 
     /**
@@ -210,8 +215,8 @@ public class SimulationTool {
      * @param suffix Specified suffix passed as a String
      * @param directory Specified directory to iterate through, passed as a Path
      */
-    public void deleteFilesWithSuffix(String suffix, Path directory) throws IOException {
-        this.deleteFilesWith(null, suffix, directory);
+    public static void deleteFilesWithSuffix(String suffix, Path directory) throws IOException {
+        SimulationTool.deleteFilesWith(null, suffix, directory);
     }
 
     /**
@@ -237,7 +242,7 @@ public class SimulationTool {
      * @param suffix passed as a String
      * @return An ArrayList<Path> fitting the regex criteria "prefix(.*)suffix"
      */
-    public List<Path> findFolderWith(String prefix,String suffix) throws IOException {
+    public List<Path> findFolderWith(String prefix, String suffix, Path directory) throws IOException {
 
         Pattern pattern;
         if (suffix != null && prefix != null) {
@@ -253,10 +258,9 @@ public class SimulationTool {
         LOG.info("Using pattern: " + pattern);
 
         ArrayList<Path> paths = new ArrayList<>(2);
-        Path workingDirectory = Path.of(this.getWorkingDirectory());
 
-        LOG.info("Iterating through working directory: " + this.getWorkingDirectory());
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(workingDirectory)) {
+        LOG.info("Iterating through working directory: " + directory);
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
             for (Path entry : stream) {
                 boolean isDirectory = new File(entry.toUri()).isDirectory();
                 if (!isDirectory) {
@@ -279,8 +283,8 @@ public class SimulationTool {
      * @param prefix passed as a String
      * @return An ArrayList<Path> fitting the regex criteria "prefix(.*)suffix"
      */
-    public List<Path> findFolderWithPrefix(String prefix) throws IOException {
-        return findFolderWith(prefix, null);
+    public List<Path> findFolderWithPrefix(String prefix, Path directory) throws IOException {
+        return this.findFolderWith(prefix, null, directory);
     }
 
     /**
@@ -288,8 +292,8 @@ public class SimulationTool {
      * @param suffix passed as a String
      * @return An ArrayList<Path> fitting the regex criteria "prefix(.*)suffix"
      */
-    public List<Path> findFolderWithSuffix(String suffix) throws IOException {
-        return findFolderWith(null, suffix);
+    public List<Path> findFolderWithSuffix(String suffix, Path directory) throws IOException {
+        return this.findFolderWith(null, suffix, directory);
     }
 
     /**
@@ -413,9 +417,9 @@ public class SimulationTool {
 
     // MAIN ACTIONS - OVERWRITTEN IN CHILD CLASSES
     // ================================================================================================================
-    public void newProject() {}
-    public void openExisting() {}
-    public void solveSilently() {}
+    protected abstract void newProject();
+    protected abstract void openExisting();
+    protected abstract void silentSolve();
 
     // GETTERS
     // ================================================================================================================
@@ -481,5 +485,31 @@ public class SimulationTool {
 
     public void setProjectName(String projectName) {
         this.projectName = projectName;
+    }
+
+    // MISC
+    // ================================================================================================================
+    @Override
+    public String toString() {
+        StringBuilder result = new StringBuilder(String.format("Instantiated SimulationTool: %s%n", this.getClass().getSimpleName()));
+        result.append("-".repeat(80));
+
+        result.append("Teamcenter Inputs:");
+        for (Map.Entry e : this.teamcenterInputs.entrySet()) {
+            if (!e.getKey().equals("securityToken")) {
+                result.append(String.format("%n\t%s: %s", e.getKey(), e.getValue()));
+            } else {
+                result.append(String.format("%n\t%s: %s", e.getKey(), "*************"));
+            }
+        }
+
+        if (!this.userInputs.isEmpty()) {
+            result.append("\n\nUser Inputs:");
+            for (Map.Entry e : this.userInputs.entrySet()) {
+                result.append(String.format("%n\t%s: %s", e.getKey(), e.getValue()));
+            }
+        }
+
+        return result.toString();
     }
 }
